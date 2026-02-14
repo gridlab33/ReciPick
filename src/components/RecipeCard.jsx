@@ -12,7 +12,7 @@ export function RecipeCard({ recipe, onClick }) {
             <div className="recipe-card__image">
                 {recipe.thumbnail && !imageError ? (
                     <img
-                        src={recipe.thumbnail}
+                        src={`https://images.weserv.nl/?url=${encodeURIComponent(recipe.thumbnail)}`}
                         alt={recipe.title}
                         onError={() => setImageError(true)}
                         referrerPolicy="no-referrer"
