@@ -16,7 +16,7 @@ const URL_PATTERNS = {
         label: 'YouTube',
     },
     tiktok: {
-        pattern: /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com\/@([^\/]+)\/video\/(\d+)|vm\.tiktok\.com\/([A-Za-z0-9]+))/i,
+        pattern: /(?:https?:\/\/)?(?:www\.)?(?:tiktok\.com\/@([^\/]+)\/video\/(\d+)|(?:vm|vt)\.tiktok\.com\/([A-Za-z0-9]+))/i,
         name: 'tiktok',
         label: 'TikTok',
     },
@@ -54,94 +54,84 @@ export const extractInstagramId = (url) => {
     return match ? match[2] : null;
 };
 
-export async function fetchInstagramMetadata(postId, rapidApiKey, originalUrl = '') {
-    // Attempt to extract username from URL immediately for fallback
-    const urlUsername = originalUrl ? extractInstagramUsername(originalUrl) : '';
+// Helper to extract TikTok Video ID
+export const extractTikTokVideoId = (url) => {
+    if (!url) return null;
+    // Standard URL: tiktok.com/@user/video/1234567890
+    const match = url.match(/tiktok\.com\/@[^\/]+\/video\/(\d+)/i);
+    if (match && match[1]) return match[1];
 
-    // 1. Try Netlify Function (Serverless) - Cost Free
-    // This works if deployed OR if running 'netlify dev' locally.
-    // If running 'npm run dev', this will likely 404, so we handle that.
-    try {
-        if (originalUrl) {
-            console.log('☁️ Attempting Netlify Function...');
-            const funcUrl = `/.netlify/functions/get-instagram-thumbnail?url=${encodeURIComponent(originalUrl)}`;
-            const response = await fetch(funcUrl);
+    // Short URL (might not have ID directly, but some do redirection params)
+    // If it's a short URL like vt.tiktok.com/AbCdEf/, we can't extract ID without expansion.
+    // But if the URL was already expanded to the canonical one (which we try to do), it works.
+    return null;
+};
 
-            if (response.ok) {
-                const data = await response.json();
-                if (data.thumbnail) {
-                    console.log('✅ Netlify Function Success:', data);
-                    return {
-                        title: data.title || (urlUsername ? `Instagram Post by @${urlUsername}` : `Instagram Post`),
-                        description: data.description || '',
-                        authorName: urlUsername ? `@${urlUsername}` : '',
-                        thumbnail: data.thumbnail,
-                        source: 'instagram'
-                    };
-                }
-            } else {
-                console.warn(`⚠️ Netlify Function failed (${response.status}), falling back...`);
-            }
-        }
-    } catch (e) {
-        console.warn('⚠️ Netlify Function skipped (likely local dev without proxy)', e);
-    }
-
-    // 2. RapidAPI Fallback (If key provided)
-    if (rapidApiKey) {
-        console.log(`🔍 Instagram API: Attempting to fetch metadata for post ID: ${postId}`);
+export async function fetchInstagramMetadata(postId, apifyApiToken) {
+    // 1. Apify API (If token provided)
+    if (apifyApiToken) {
+        console.log(`🔍 Instagram Scraper: Attempting to fetch metadata for post ID: ${postId} via Apify`);
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+            // Apify Instagram Scraper Actor (apify/instagram-scraper)
+            // Using the synchronous run-sync-get-dataset-items endpoint for immediate results
+            const apiUrl = `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${apifyApiToken}`;
 
-            // Instagram Scraper Stable API uses media_code parameter (the shortcode)
-            const apiUrl = `https://instagram-scraper-stable-api.p.rapidapi.com/get_media_data_v2.php?media_code=${postId}`;
-            console.log(`📡 Instagram API: Calling ${apiUrl}`);
+            // Construct direct URL from postId
+            const directUrl = `https://www.instagram.com/p/${postId}/`;
+
+            console.log(`📡 Apify API: Calling ${apiUrl}`);
 
             const response = await fetch(apiUrl, {
-                method: 'GET',
+                method: 'POST',
                 headers: {
-                    'X-RapidAPI-Key': rapidApiKey,
-                    'X-RapidAPI-Host': 'instagram-scraper-stable-api.p.rapidapi.com'
+                    'Content-Type': 'application/json',
                 },
-                signal: controller.signal
+                body: JSON.stringify({
+                    "directUrls": [directUrl],
+                    "resultsType": "details",
+                    "searchType": "hashtag", // Default required field
+                    "searchLimit": 1,
+                }),
             });
-            clearTimeout(timeoutId);
 
             if (response.ok) {
                 const data = await response.json();
-                const actualData = data.data || data;
 
-                // Extract data...
-                const captionEdges = actualData.edge_media_to_caption?.edges || [];
-                const caption = captionEdges.length > 0 ? captionEdges[0].node.text : '';
-                const username = actualData.owner?.username || '';
-                const apiThumbnail = actualData.display_url;
+                // Apify returns an array of items
+                if (data && data.length > 0) {
+                    const item = data[0];
+                    console.log('✅ Apify API Success:', item);
 
-                // Fallback thumbnail if API returns null but we have postId
-                const finalThumbnail = apiThumbnail || `https://www.instagram.com/p/${postId}/media/?size=l`;
+                    const caption = item.caption || '';
+                    const ownerUsername = item.ownerUsername || '';
+                    const displayUrl = item.displayUrl || item.thumbnailUrl;
 
-                return {
-                    title: caption ? caption.split('\n')[0].substring(0, 100) : `Instagram Post by ${username || 'Unknown'}`,
-                    description: caption,
-                    authorName: username ? `@${username}` : '',
-                    thumbnail: finalThumbnail,
-                    source: 'instagram'
-                };
+                    return {
+                        title: caption ? caption.split('\n')[0].substring(0, 100) : `Instagram Post by ${ownerUsername || 'Unknown'}`,
+                        description: caption,
+                        authorName: ownerUsername ? `@${ownerUsername}` : '',
+                        thumbnail: displayUrl || `https://www.instagram.com/p/${postId}/media/?size=l`,
+                        source: 'instagram'
+                    };
+                } else {
+                    console.warn('⚠️ Apify API returned empty results');
+                }
+            } else {
+                console.warn(`⚠️ Apify API failed (${response.status})`);
             }
         } catch (error) {
-            console.error('❌ Instagram API Request Failed:', error);
+            console.error('❌ Apify API Request Failed:', error);
         }
     } else {
-        console.log('Instagram: No RapidAPI key provided, skipping API fetch');
+        console.log('Instagram: No Apify API token provided, skipping API fetch');
     }
 
-    // 3. Ultimate Fallback (Manual Construction)
-    // If Netlify function fails AND API fails/missing, just give the link
+    // 2. Fallback (Manual Construction)
+    // If API fails or no token, just give the link
     return {
-        title: urlUsername ? `Instagram Post by @${urlUsername}` : `Instagram Post (${postId})`,
+        title: `Instagram Post (${postId})`,
         description: '',
-        authorName: urlUsername ? `${urlUsername}` : '',
+        authorName: '',
         thumbnail: `https://www.instagram.com/p/${postId}/media/?size=l`,
         source: 'instagram'
     };
@@ -241,8 +231,64 @@ async function fetchFromOEmbed(videoId) {
  * 
  * Export for external use in RecipeDetailPage and other components
  */
-export async function fetchYouTubeMetadata(videoId, youtubeApiKey = null) {
-    // Try 1: Invidious (free, includes description)
+export async function fetchYouTubeMetadata(videoId, youtubeApiKey = null, apifyApiToken = null) {
+    // 1. Apify API (Priority 1)
+    if (apifyApiToken) {
+        console.log(`🔍 YouTube Scraper: Attempting to fetch metadata for video ID: ${videoId} via Apify`);
+        try {
+            // User-provided YouTube Scraper Actor: YeXkAgbTOgDckE39s
+            // User-provided Actor: h7sDV53CddomktSi5
+            const actorId = 'h7sDV53CddomktSi5';
+            const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyApiToken}`;
+            const directVideoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+            console.log(`📡 Apify API: Calling ${apiUrl}`);
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    "startUrls": [{ "url": directVideoUrl }], // Using startUrls for direct video link
+                    "maxResults": 1,
+                    "subtitlesLanguage": "en",
+                    "subtitlesFormat": "srt"
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    const item = data[0];
+                    console.log('✅ Apify YouTube Response:', item);
+
+                    // Check if item contains error or missing necessary fields
+                    if (item.error || !item.title) {
+                        console.warn(`⚠️ Apify Actor returned error or incomplete data: ${JSON.stringify(item)}`);
+                        // Do not return here, let it fall through to other methods below
+                    } else {
+                        return {
+                            title: item.title,
+                            description: item.description || item.text || item.shortDescription || item.metaDescription || item.videoDescription || item.desc || '',
+                            authorName: item.channelName || item.author || item.channelTitle || item.uploader || '',
+                            thumbnail: item.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+                            source: 'apify_youtube'
+                        };
+                    }
+                } else {
+                    console.warn(`⚠️ Apify YouTube API returned empty results`);
+                }
+            } else {
+                console.warn(`⚠️ Apify YouTube API failed (${response.status}) - Proceeding to fallback`);
+            }
+        } catch (error) {
+            console.error('❌ Apify YouTube Request Failed:', error);
+        }
+    }
+
+    // Try 2: Invidious (free, includes description)
     console.log('Trying Invidious...');
     const invidiousData = await fetchFromInvidious(videoId);
     if (invidiousData) {
@@ -250,7 +296,7 @@ export async function fetchYouTubeMetadata(videoId, youtubeApiKey = null) {
         return { ...invidiousData, source: 'invidious' };
     }
 
-    // Try 2: YouTube Data API (if user provided key)
+    // Try 3: YouTube Data API (if user provided key)
     if (youtubeApiKey) {
         console.log('Invidious failed, trying YouTube Data API...');
         const apiData = await fetchFromYouTubeAPI(videoId, youtubeApiKey);
@@ -260,7 +306,7 @@ export async function fetchYouTubeMetadata(videoId, youtubeApiKey = null) {
         }
     }
 
-    // Try 3: oEmbed (last resort, no description)
+    // Try 4: oEmbed (last resort, no description)
     console.log('Trying oEmbed fallback...');
     const oEmbedData = await fetchFromOEmbed(videoId);
     if (oEmbedData) {
@@ -270,6 +316,104 @@ export async function fetchYouTubeMetadata(videoId, youtubeApiKey = null) {
 
     console.log('✗ All methods failed');
     return null;
+}
+
+/**
+ * Fetch TikTok metadata using Apify
+ * Returns { title, description, authorName, thumbnail } or null if failed
+ */
+export async function fetchTikTokMetadata(url, apifyApiToken) {
+    if (!apifyApiToken) {
+        console.log('TikTok: No Apify API token provided, skipping API fetch');
+        // Return minimal info parsed from URL
+        const parsed = parseUrl(url);
+        return {
+            title: parsed?.suggestedTitle || 'TikTok Video',
+            description: '',
+            authorName: parsed?.creatorHandle || '',
+            thumbnail: '', // TikTok doesn't have an easy public thumbnail URL without API
+            source: 'tiktok'
+        };
+    }
+
+    console.log(`🔍 TikTok Scraper: Attempting to fetch metadata for URL: ${url} via Apify`);
+    try {
+        // Apify TikTok Scraper Actor: S5h7zRLfKFEr8pdj7
+        const actorId = 'S5h7zRLfKFEr8pdj7';
+        const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyApiToken}`;
+
+        console.log(`📡 Apify API: Calling ${apiUrl}`);
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                "postURLs": [url],
+                "scrapeRelatedVideos": false,
+                "resultsPerPage": 1,
+                "shouldDownloadVideos": false,
+                "shouldDownloadCovers": false,
+                "shouldDownloadSubtitles": false,
+                "shouldDownloadSlideshowImages": false
+            }),
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+
+            if (data && data.length > 0) {
+                const item = data[0];
+                console.log('✅ Apify TikTok Response:', item);
+
+                // Extract relevant fields
+                // Note: Actual field names depend on the specific actor's output.
+                // Based on common Apify TikTok actors, usually 'text', 'authorMeta.name', 'videoMeta.coverUrl'
+                const title = item.text || item.desc || 'TikTok Video';
+                const author = item.authorMeta?.name || item.authorMeta?.nickName || item.author || '';
+                const description = item.text || ''; // TikTok descriptions are usually the caption
+                // Use the cover URL from the actor, or fallback to a default if missing
+                const thumbnail = item.videoMeta?.coverUrl || item.imageUrl || item.video?.cover || '';
+
+                // Extract canonical Video ID (numeric)
+                // Short URLs (vt.tiktok.com) resolve to full URLs with new IDs.
+                // We must use the canonical ID for embeds to work.
+                const canonicalVideoId = item.id || (item.webVideoUrl ? item.webVideoUrl.split('/').pop() : null);
+
+                // Get canonical URL to use for the embed 'cite' attribute
+                const canonicalUrl = item.webVideoUrl || `https://www.tiktok.com/@${author}/video/${canonicalVideoId}`;
+
+                return {
+                    title: title.substring(0, 100),
+                    description: description,
+                    authorName: author ? `@${author}` : '',
+                    thumbnail: thumbnail,
+                    source: 'tiktok',
+                    videoId: canonicalVideoId,
+                    canonicalUrl: canonicalUrl, // Return the full web URL
+                    // Store the full item if we want to use the video URL later (e.g. item.videoMeta.downloadAddr)
+                    originalData: item
+                };
+            } else {
+                console.warn(`⚠️ Apify TikTok API returned empty results`);
+            }
+        } else {
+            console.warn(`⚠️ Apify TikTok API failed (${response.status})`);
+        }
+    } catch (error) {
+        console.error('❌ Apify TikTok Request Failed:', error);
+    }
+
+    // Fallback if API fails
+    const parsed = parseUrl(url);
+    return {
+        title: parsed?.suggestedTitle || 'TikTok Video',
+        description: '',
+        authorName: parsed?.creatorHandle || '',
+        thumbnail: '',
+        source: 'tiktok'
+    };
 }
 
 /**

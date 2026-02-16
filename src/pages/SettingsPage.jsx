@@ -35,22 +35,52 @@ export function SettingsPage({ settings, updateSettings }) {
                 {/* YouTube API Settings */}
                 <section className="category-section">
                     <h2 className="category-section__title">고급 설정</h2>
+                    {/* Apify API Token */}
                     <div style={{ padding: 'var(--spacing-md)', background: 'var(--color-white)', borderRadius: 'var(--radius-md)' }}>
+                        <label style={{ display: 'block', marginBottom: 'var(--spacing-sm)', fontWeight: 500 }}>
+                            Apify API 토큰 (선택사항)
+                            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-primary)', fontWeight: 400, marginLeft: 'var(--spacing-sm)' }}>
+                                추천 (Instagram/YouTube 정보 가져오기)
+                            </span>
+                        </label>
+                        <input
+                            type="password"
+                            placeholder="Apify API 토큰 입력"
+                            value={settings?.apifyApiToken || ''}
+                            onChange={(e) => updateSettings({ apifyApiToken: e.target.value })}
+                            style={{ width: '100%' }}
+                        />
+                        <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--spacing-xs)', lineHeight: 1.5 }}>
+                            💡 Instagram 및 YouTube 링크에서 작성자, 캡션을 자동으로 가져오려면 Apify API 토큰이 필요합니다.{' '}
+                            <a
+                                href="https://console.apify.com/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}
+                            >
+                                Apify Console
+                            </a>
+                            에서 토큰을 확인하세요.
+                        </p>
+                    </div>
+
+                    {/* YouTube API Settings */}
+                    <div style={{ padding: 'var(--spacing-md)', background: 'var(--color-white)', borderRadius: 'var(--radius-md)', marginTop: 'var(--spacing-md)' }}>
                         <label style={{ display: 'block', marginBottom: 'var(--spacing-sm)', fontWeight: 500 }}>
                             YouTube API 키 (선택사항)
                             <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', fontWeight: 400, marginLeft: 'var(--spacing-sm)' }}>
-                                더 빠른 불러오기
+                                비상용 (Apify 실패 시 사용)
                             </span>
                         </label>
                         <input
                             type="text"
-                            placeholder="AIzaSy... (비워두면 무료 서비스 사용)"
+                            placeholder="AIzaSy... (비워무면 무료 서비스 사용)"
                             value={settings?.youtubeApiKey || ''}
                             onChange={(e) => updateSettings({ youtubeApiKey: e.target.value })}
                             style={{ width: '100%' }}
                         />
                         <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--spacing-xs)', lineHeight: 1.5 }}>
-                            💡 YouTube API 키가 없어도 자동 불러오기가 작동합니다. 더 빠르고 안정적인 성능을 원하시면{' '}
+                            💡 Apify가 작동하지 않을 경우를 대비한 비상용 키입니다.{' '}
                             <a
                                 href="https://console.cloud.google.com/"
                                 target="_blank"
@@ -60,34 +90,6 @@ export function SettingsPage({ settings, updateSettings }) {
                                 Google Cloud Console
                             </a>
                             에서 무료로 발급받으실 수 있습니다.
-                        </p>
-                    </div>
-
-                    {/* RapidAPI Key for Instagram */}
-                    <div style={{ padding: 'var(--spacing-md)', background: 'var(--color-white)', borderRadius: 'var(--radius-md)', marginTop: 'var(--spacing-md)' }}>
-                        <label style={{ display: 'block', marginBottom: 'var(--spacing-sm)', fontWeight: 500 }}>
-                            Instagram API 키 (선택사항)
-                            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', fontWeight: 400}}> 작성자, 캡션 자동 가져오기
-                            </span>
-                        </label>
-                        <input
-                            type="password"
-                            placeholder="RapidAPI 키 입력 (비워두면 수동 입력)"
-                            value={settings?.rapidApiKey || ''}
-                            onChange={(e) => updateSettings({ rapidApiKey: e.target.value })}
-                            style={{ width: '100%' }}
-                        />
-                        <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--spacing-xs)', lineHeight: 1.5 }}>
-                            💡 Instagram 링크에서 작성자, 캡션을 자동으로 가져오려면 RapidAPI 키가 필요합니다.{' '}
-                            <a
-                                href="https://rapidapi.com/hub"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}
-                            >
-                                RapidAPI
-                            </a>
-                            에서 "Instagram Scraper" 검색 후 무료 플랜 사용 가능 (10-50건/일)
                         </p>
                     </div>
                 </section>

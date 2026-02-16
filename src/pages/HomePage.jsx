@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ChefHat, Search, BookOpen, Utensils, X } from 'lucide-react';
+import { Search, BookOpen, Utensils, X } from 'lucide-react';
 import { RecipeCard } from '../components/RecipeCard';
 import { CategoryChip } from '../components/CategoryChip';
 import { getSupportedSources } from '../utils/urlParser';
 import { SourceIcon } from '../components/SourceIcon';
+import { ReciPickLogo } from '../components/ReciPickLogo';
 
 export function HomePage({ recipes, stats, onRecipeClick }) {
     const [activeFilter, setActiveFilter] = useState('all');
@@ -37,8 +38,10 @@ export function HomePage({ recipes, stats, onRecipeClick }) {
             {/* Header with Expandable Search */}
             <header className="header">
                 <div className={`header-content ${isSearchOpen ? 'hidden' : ''}`}>
-                    <h1 className="header-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ChefHat size={28} /> 맛있는 기록</h1>
-                    <p className="header-subtitle">나만의 레시피 스크랩북</p>
+                    <h1 className="header-title" style={{ display: 'flex', alignItems: 'center' }}>
+                        <ReciPickLogo height={32} width={106} />
+                    </h1>
+                    <p className="header-subtitle" style={{ color: '#94A3B8' }}>나만의 레시피 스크랩북</p>
                 </div>
 
                 <div className={`search-container ${isSearchOpen ? 'expanded' : ''}`}>

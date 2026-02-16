@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { parseUrl, getSupportedSources, fetchYouTubeMetadata, fetchInstagramMetadata } from '../utils/urlParser';
+import { parseUrl, getSupportedSources, fetchYouTubeMetadata, fetchInstagramMetadata, fetchTikTokMetadata } from '../utils/urlParser';
 import { Check, Loader2, Sparkles, FileText, X } from 'lucide-react';
 import { SourceIcon } from './SourceIcon';
 
@@ -36,30 +36,9 @@ export function AddRecipeModal({ isOpen, onClose, onSave, categories, settings }
                     setIsLoading(true);
                     setIsTempTitle(false);
 
-                    fetchYouTubeMetadata(parsed.videoId, settings?.youtubeApiKey).then((metadata) => {
-                        setIsLoading(false);
-                        if (metadata) {
-                            if (metadata.title) {
-                                setTitle(metadata.title);
-                            }
-                            if (metadata.authorName) {
-                                setCreatorName(metadata.authorName);
-                            }
-                            if (metadata.description) {
-                                setDescription(metadata.description);
-                            }
-                        } else {
-                            // Fallback to suggested title if API fails
-                            setTitle(parsed.suggestedTitle);
-                            setIsTempTitle(true);
-                        }
-                    });
-                } else if (parsed.source === 'instagram' && parsed.videoId) {
-                    // For Instagram: Fetch caption using RapidAPI
-                    setIsLoading(true);
-                    setIsTempTitle(false);
-
-                    fetchInstagramMetadata(parsed.videoId, settings?.rapidApiKey).then((metadata) => {
+                    // Debug Log
+                    console.log('[Debug] AddRecipeModal settings:', settings);
+                    fetchYouTubeMetadata(parsed.videoId, settings?.youtubeApiKey, settings?.apifyApiToken).then((metadata) => {
                         setIsLoading(false);
                         if (metadata) {
                             if (metadata.title) {
@@ -72,19 +51,98 @@ export function AddRecipeModal({ isOpen, onClose, onSave, categories, settings }
                                 setDescription(metadata.description);
                             }
                             if (metadata.thumbnail) {
-                                setThumbnail(metadata.thumbnail); // Set thumbnail
+                                setThumbnail(metadata.thumbnail);
                             }
                         } else {
-                            console.log('⚠️ No metadata received, using fallback');
                             // Fallback to suggested title if API fails
                             setTitle(parsed.suggestedTitle);
                             setIsTempTitle(true);
                         }
                     });
+                } else if (parsed.source === 'instagram' && parsed.videoId) {
+                    // For Instagram: Try to fetch metadata using Apify
+                    setIsLoading(true);
+                    // Use a slightly different approach for Instagram title - maybe keep it generic until fetched
+
+                    fetchInstagramMetadata(parsed.videoId, settings?.apifyApiToken).then((metadata) => {
+                        setIsLoading(false);
+                        if (metadata) {
+                            if (metadata.title && !metadata.title.startsWith('Instagram Post')) {
+                                setTitle(metadata.title);
+                                setIsTempTitle(false);
+                            } else {
+                                setTitle(parsed.suggestedTitle);
+                                setIsTempTitle(true);
+                            }
+
+                            if (metadata.authorName) {
+                                setCreatorName(metadata.authorName);
+                            }
+
+                            if (metadata.description) {
+                                setDescription(metadata.description);
+                            }
+
+                            if (metadata.thumbnail) {
+                                setThumbnail(metadata.thumbnail);
+                            }
+                        }
+                    });
+                } else if (parsed.source === 'tiktok') {
+                    // For TikTok: Try to fetch metadata using Apify
+                    setIsLoading(true);
+
+                    fetchTikTokMetadata(parsed.url, settings?.apifyApiToken).then((metadata) => {
+                        setIsLoading(false);
+                        if (metadata) {
+                            // If we got a canonical video ID (numeric) from Apify, update the parsed data
+                            // This ensures the embed works even for short URLs (vt.tiktok.com)
+                            if (metadata.videoId) {
+                                setParsedData(prev => ({ ...prev, videoId: metadata.videoId }));
+                            }
+
+                            // If we got a canonical URL (webVideoUrl), use that instead of the short URL
+                            if (metadata.canonicalUrl) {
+                                setParsedData(prev => ({ ...prev, url: metadata.canonicalUrl }));
+                                // Also update the input field if you want, but maybe better to keep user input visible? 
+                                // Actually, for the recipe object, we need the canonical URL.
+                                // The recipe is saved using `url` state if not overridden, 
+                                // but `handleSave` uses `url` state. Let's update `url` state?
+                                // Better: Update `url` state to canonical so it saves correctly.
+                                setUrl(metadata.canonicalUrl);
+                            }
+
+                            if (metadata.title && metadata.title !== 'TikTok Video') {
+                                setTitle(metadata.title);
+                                setIsTempTitle(false);
+                            } else {
+                                setTitle(parsed.suggestedTitle);
+                                setIsTempTitle(true);
+                            }
+
+                            if (metadata.authorName) {
+                                setCreatorName(metadata.authorName);
+                            }
+
+                            if (metadata.description) {
+                                setDescription(metadata.description);
+                            }
+
+                            if (metadata.thumbnail) {
+                                setThumbnail(metadata.thumbnail);
+                            }
+                        }
+                    });
                 } else {
-                    // For other platforms: Use temporary title
+                    // For others: Use suggested default
                     setTitle(parsed.suggestedTitle);
                     setIsTempTitle(true);
+                    if (parsed.creatorHandle) {
+                        setCreatorName(parsed.creatorHandle);
+                    }
+                    if (parsed.thumbnail) {
+                        setThumbnail(parsed.thumbnail);
+                    }
                 }
             }
         } else {
@@ -115,6 +173,7 @@ export function AddRecipeModal({ isOpen, onClose, onSave, categories, settings }
             categories: selectedCategories,
             notes,
             description, // Include the pasted description
+            videoId: parsedData?.videoId || null, // Ensure videoId is saved
         };
 
         onSave(recipe);
